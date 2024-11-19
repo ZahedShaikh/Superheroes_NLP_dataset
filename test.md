@@ -1,57 +1,88 @@
-Understandable! Mapping all possible variations manually would indeed be a massive task. Here’s a more scalable approach using machine learning and NLP techniques:
+No worries! If you have the `.safetensor` model file downloaded, you can load and use it locally without needing access to Hugging Face's online resources. Here's a step-by-step guide on how you can proceed:
 
-### 1. **Vectorization and Embeddings:**
-- **Use embeddings**: Represent your column names and variations as vectors using word embeddings (like BERT, Word2Vec, or similar).
-- **Similarity Search**: Use these embeddings to find the closest matching column name based on user input.
+### 1. **Install Necessary Libraries:**
+You need to install the required libraries to work with `.safetensor` files. Ensure you have `transformers` and `safetensors` libraries installed.
 
-### 2. **Implement Fuzzy Matching:**
-- Use advanced fuzzy matching techniques to match user input to the closest column name in your dictionary.
-
-### Detailed Steps:
-
-#### Step 1: Generate Embeddings for Column Names
-You can use a pre-trained model to generate embeddings for your column names.
-
-```python
-from sentence_transformers import SentenceTransformer
-
-# Load a pre-trained model
-model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
-
-# Example columns (in practice, load all your columns here)
-columns = ["acc_n", "account number", "customer name", "date of birth"]
-
-# Generate embeddings for column names
-column_embeddings = model.encode(columns)
+```bash
+pip install transformers safetensors
 ```
 
-#### Step 2: Match User Input to Column Names
-Given a user query, generate the embedding and find the most similar column name.
+### 2. **Load the Model Locally:**
+You can load the model and tokenizer from the local `.safetensor` file. Here's an example:
 
 ```python
-import numpy as np
+from transformers import LlamaTokenizer, LlamaForCausalLM
+from safetensors.torch import load_file
 
-def find_closest_column(query, column_embeddings, columns):
-    query_embedding = model.encode([query])[0]
-    distances = np.linalg.norm(column_embeddings - query_embedding, axis=1)
-    closest_index = np.argmin(distances)
-    return columns[closest_index]
+# Load tokenizer
+tokenizer = LlamaTokenizer.from_pretrained("path/to/your/local/tokenizer")
+
+# Load model weights from safetensor file
+model_weights = load_file("path/to/your/model.safetensors")
+
+# Initialize the model with the loaded weights
+model = LlamaForCausalLM.from_pretrained(
+    "path/to/your/local/model",
+    state_dict=model_weights
+)
+
+# Example function to extract column names
+def extract_column_names_llama(query):
+    # Tokenize the query using LLAMA tokenizer
+    inputs = tokenizer(query, return_tensors="pt")
+    outputs = model.generate(inputs["input_ids"], max_length=50, num_return_sequences=1)
+    enhanced_query = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    
+    return enhanced_query
 
 # Example user query
-user_query = "acc number"
-
-# Find the closest column name
-closest_column = find_closest_column(user_query, column_embeddings, columns)
-print(closest_column)  # Output: 'acc_n'
+user_query = "account number"
+enhanced_query = extract_column_names_llama(user_query)
+print(enhanced_query)
 ```
 
-#### Step 3: Query API for Column Details
-Use the extracted column name to query your API.
+### 3. **Match User Input to Column Names:**
+You can integrate the local model with your existing logic to match user inputs to your dictionary of column names.
 
 ```python
-def query_column_details(column_name):
+import re
+from fuzzywuzzy import process
+
+# Dictionary to map natural language terms to column names
+column_map = {
+    "acc_n": "acc_n",
+    "account number": "acc_n",
+    "customer name": "cust_name",
+    "date of birth": "dob"
+}
+
+def find_closest_column(query, column_map):
+    # Extract tokens from the query
+    tokens = re.findall(r'\w+', query.lower())
+    
+    # Match tokens to column names using fuzzy matching
+    column_names = []
+    for token in tokens:
+        matched_column, score = process.extractOne(token, column_map.keys())
+        if score >= 80:  # Adjust the threshold as needed
+            column_names.append(column_map[matched_column])
+    
+    return column_names
+
+# Example user query
+columns = find_closest_column(enhanced_query, column_map)
+print(columns)  # Output: ['acc_n']
+```
+
+### 4. **Query Your API for Column Details:**
+Use the extracted column names to query your existing API.
+
+```python
+import requests
+var = 1A5HT5jKY O7VEGRs9_FhsVzI02Dpo_zfe
+def query_column_details(column_names):
     api_endpoint = "https://your-data-api.com/get_column_details"
-    params = {"column": column_name}
+    params = {"columns": column_names}
     
     response = requests.get(api_endpoint, params=params)
     
@@ -60,34 +91,9 @@ def query_column_details(column_name):
     else:
         raise Exception("API call failed with status code: {}".format(response.status_code))
 
-# Query details for the closest column
-column_details = query_column_details(closest_column)
+# Query schema with the extracted column names
+column_details = query_column_details(columns)
 print(column_details)
 ```
 
-### Scaling Up
-For a large number of columns, ensure that:
-1. **Efficient Storage and Retrieval**: Store the embeddings efficiently (e.g., in a database or a memory-efficient data structure).
-2. **Batch Processing**: Process user queries in batches if necessary to optimize performance.
-
-### Example Using a Larger Dataset
-When dealing with thousands of columns, you can use tools like **Faiss** (Facebook AI Similarity Search) for faster and scalable vector search.
-
-```python
-import faiss
-
-# Convert embeddings to a numpy array
-embeddings = np.array(column_embeddings, dtype=np.float32)
-
-# Build the index
-index = faiss.IndexFlatL2(embeddings.shape[1])
-index.add(embeddings)
-
-# Search for the closest match
-query_embedding = model.encode([user_query])[0].reshape(1, -1)
-D, I = index.search(query_embedding, 1)
-closest_column = columns[I[0][0]]
-print(closest_column)  # Output: 'acc_n'
-```
-
-By using these techniques, you can efficiently handle large dictionaries of column names and ensure that user queries are accurately mapped to the correct columns. If you have any more specific requirements or need further assistance, feel free to ask!
+By following these steps, you can effectively use the LLAMA model locally, handle user inputs, and query your API to get the necessary details. This approach avoids the need for direct access to Hugging Face while still leveraging the power of the LLAMA model. If you encounter any issues or need further assistance, I'm here to help!
